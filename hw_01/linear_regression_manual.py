@@ -30,7 +30,7 @@ if __name__ == "__main__":
     # TODO: Split data so that the last `args.test_size` data are the test
     # set and the rest is the training set.
     X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(
-        X, y, test_size=args.test_size
+        X, y, test_size=args.test_size, shuffle=False
     )
     # TODO: Solve the linear regression using the algorithm from the lecture,
     # explicitly computing the matrix inverse (using np.linalg.inv).
