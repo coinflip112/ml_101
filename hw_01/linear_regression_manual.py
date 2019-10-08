@@ -25,6 +25,7 @@ if __name__ == "__main__":
     # TODO: Pad a value of `1` to every instance in dataset.data
     # (np.pad or np.concatenate might be useful).
     X = dataset.data
+    X = np.pad(X, ((0, 0), (1, 0)), mode="constant", constant_values=1.0)
     y = dataset.target
     # TODO: Split data so that the last `args.test_size` data are the test
     # set and the rest is the training set.
