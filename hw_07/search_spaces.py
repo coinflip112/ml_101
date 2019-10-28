@@ -28,7 +28,7 @@ preprocessing_options_tree_based = {
 
 svc_linear_search_space = {
     "estimator__alpha": Real(1e-6, 1e2, prior="log-uniform"),
-    "estimator__l1_ratio": Real(0, 1),
+    "estimator__l1_ratio": Real(0.0, 1.0),
     **preprocessing_options_general,
 }
 
