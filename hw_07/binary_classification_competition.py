@@ -8,7 +8,25 @@ import sys
 
 import numpy as np
 import pandas as pd
+from sklearn.compose import ColumnTransformer
+from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
+from sklearn.svm import SVC
+from sklearn.linear_model import SGDClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
 
+from sklearn.metrics import accuracy_score
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import (
+    MaxAbsScaler,
+    MinMaxScaler,
+    StandardScaler,
+    PolynomialFeatures,
+    FunctionTransformer,
+    OneHotEncoder,
+)
+from stacker import StackingClassifier
+from target_encoder import TargetEncoder
 
 class Dataset:
     def __init__(
@@ -43,37 +61,115 @@ if __name__ == "__main__":
 
     # Load the dataset, downloading it if required
     train = Dataset()
+    features = train.data
+    targets = train.target
 
-    # Note that `train.data` and `train.target` are a `pandas.DataFrame`.
-    # It is similar to a Numpy array, but columns have names and types.
-    # You can get column types using `train_data.dtypes`; note that
-    # strings are actually encoded as `object`s.
+    categoricals = [
+        "Workclass",
+        "Education",
+        "Marital-status",
+        "Occupation",
+        "Relationship",
+        "Race",
+        "Native-country",
+        "Sex",
+    ]
+    numerics = [
+        "Age",
+        "Fnlwgt",
+        "Education-num",
+        "Capital-gain",
+        "Capital-loss",
+        "Hours-per-week",
+    ]
+    features_mapping_dict = {"categoricals": categoricals, "numerics": numerics}
 
-    # TODO: Train the model.
+    numerics_pipeline = lambda: Pipeline(
+        steps=[
+            ("poly_features", PolynomialFeatures(include_bias=False)),
+            ("scaler", FunctionTransformer(validate=False)),
+        ]
+    )
 
-    # TODO: The trained model needs to be saved. All sklearn models can
-    # be serialized and deserialized using the standard `pickle` module.
-    # Additionally, we can also compress the model.
-    #
-    # To save a model, open a target file for binary access, and use
-    # `pickle.dump` to save the model to the opened file:
-    # with lzma.open(args.model_path, "wb") as model_file:
-    #       pickle.dump(model, model_file)
+    preprocessing = lambda features_mapping_dict: ColumnTransformer(
+        transformers=[
+            ("numerics", numerics_pipeline(), features_mapping_dict["numerics"]),
+            ("categoricals", TargetEncoder(), features_mapping_dict["categoricals"]),
+        ]
+    )
 
-# The `recodex_predict` is called during ReCodEx evaluation (there can be
-# several Python sources in the submission, but exactly one should contain
-# a `recodex_predict` method).
+    estimator_svc_linear = Pipeline(
+        steps=[
+            ("preprocessing", preprocessing(features_mapping_dict)),
+            (
+                "estimator",
+                SGDClassifier(
+                    loss="modified_huber", penalty="elasticnet", max_iter=30000
+                ),
+            ),
+        ]
+    )
+    estimator_extra_trees = Pipeline(
+        steps=[
+            ("preprocessing", preprocessing(features_mapping_dict)),
+            ("estimator", ExtraTreesClassifier()),
+        ]
+    )
+    estimator_rf = Pipeline(
+        steps=[
+            ("preprocessing", preprocessing(features_mapping_dict)),
+            ("estimator", RandomForestClassifier()),
+        ]
+    )
+    estimator_elastic_net = Pipeline(
+        steps=[
+            ("preprocessing", preprocessing(features_mapping_dict)),
+            (
+                "estimator",
+                SGDClassifier(max_iter=30000, penalty="elasticnet", loss="log"),
+            ),
+        ]
+    )
+
+    estimator_naive_bayes = Pipeline(
+        steps=[
+            ("preprocessing", preprocessing(features_mapping_dict)),
+            ("estimator", GaussianNB()),
+        ]
+    )
+    estimator_knn = Pipeline(
+        steps=[
+            ("preprocessing", preprocessing(features_mapping_dict)),
+            ("estimator", KNeighborsClassifier()),
+        ]
+    )
+
+    with open("best_params.params", "rb") as params_to_read:
+        best_params = pickle.load(params_to_read)
+
+    estimator_svc_linear.set_params(**best_params["svc_linear"][0])
+    estimator_extra_trees.set_params(**best_params["extra_tree"][0])
+    estimator_elastic_net.set_params(**best_params["elastic_net"][0])
+    estimator_naive_bayes.set_params(**best_params["naive_bayes"][0])
+    estimator_knn.set_params(**best_params["knn"][0])
+    estimators = [
+        estimator_svc_linear,
+        estimator_extra_trees,
+        estimator_elastic_net,
+        estimator_naive_bayes,
+        estimator_knn,
+    ]
+    estimator_names = ["svc_linear", "extra_trees", "elastic_net", "naive_bayes", "knn"]
+    model = StackingClassifier(estimators=estimators, estimators_names=estimator_names)
+    # model.fit(x_train, y_train)
+
 def recodex_predict(data):
     # The `data` is a pandas.DataFrame containt test set input.
 
     args = parser.parse_args([])
 
-    # TODO: Predict target values for the given data.
-    #
-    # You should probably start by loading a model. Start by opening the model
-    # file for binary read access and then use `pickle.load` to deserialize the
-    # model from the stored binary data:
-    # with lzma.open(args.model_path, "rb") as model_file:
-    #     model = pickle.load(model_file)
-
+    with lzma.open(args.model_path, "rb") as model_file:
+        model = pickle.load(model_file)
+    test_predictions = model.predict(data)
+    return test_predictions
     # TODO: Return the predictions as a Numpy array.
