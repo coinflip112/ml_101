@@ -111,3 +111,6 @@ venv.bak/
 
 #xz files
 *.xz
+
+#npz files
+*.npz
