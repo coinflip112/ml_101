@@ -13,10 +13,18 @@ from sklearn.metrics import log_loss
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_size", default=10, type=int, help="Batch size")
-    parser.add_argument("--classes", default=10, type=int, help="Number of classes to use")
-    parser.add_argument("--hidden_layer", default=20, type=int, help="Hidden layer size")
-    parser.add_argument("--iterations", default=50, type=int, help="Number of iterations over the data")
-    parser.add_argument("--learning_rate", default=0.01, type=float, help="Learning rate")
+    parser.add_argument(
+        "--classes", default=10, type=int, help="Number of classes to use"
+    )
+    parser.add_argument(
+        "--hidden_layer", default=20, type=int, help="Hidden layer size"
+    )
+    parser.add_argument(
+        "--iterations", default=50, type=int, help="Number of iterations over the data"
+    )
+    parser.add_argument(
+        "--learning_rate", default=0.01, type=float, help="Learning rate"
+    )
     parser.add_argument("--seed", default=42, type=int, help="Random seed")
     parser.add_argument("--test_size", default=797, type=int, help="Test set size")
     args = parser.parse_args()
@@ -33,13 +41,18 @@ if __name__ == "__main__":
     # Split the data randomly to train and test using `sklearn.model_selection.train_test_split`,
     # with `test_size=args.test_size` and `random_state=args.seed`.
     train_data, test_data, train_target, test_target = sklearn.model_selection.train_test_split(
-        data, target, stratify=target, test_size=args.test_size, random_state=args.seed)
+        data, target, stratify=target, test_size=args.test_size, random_state=args.seed
+    )
 
     # Generate initial model weights
-    weights = [np.random.uniform(size=[train_data.shape[1], args.hidden_layer], low=-0.1, high=0.1),
-               np.random.uniform(size=[args.hidden_layer, args.classes], low=-0.1, high=0.1)]
+    weights = [
+        np.random.uniform(
+            size=[train_data.shape[1], args.hidden_layer], low=-0.1, high=0.1
+        ),
+        np.random.uniform(size=[args.hidden_layer, args.classes], low=-0.1, high=0.1),
+    ]
 
-    relu = lambda x: np.maximum(x,0)
+    relu = lambda x: np.maximum(x, 0)
 
     def forward(inputs):
         # TODO: Implement forward propagation, returning *both* the value of the hidden
@@ -56,11 +69,11 @@ if __name__ == "__main__":
         # in softmax can easily overflow. To avoid it, you can use the fact that
         # softmax(z) = softmax(z + any_constant) and compute softmax(z) = softmax(z - maximum_of_z).
         # That way we only exponentiate values which are non-positive, and overflow does not occur.
-        Z = np.dot(weights[0],inputs)
+        Z = inputs @ weights[0]
         A = relu(Z)
-        output = np.dot(weights[1], A)
-        return softmax(output,axis = 0), A
-    
+        output = A @ weights[1]
+        return softmax(output, axis=1), A, Z
+
     for iteration in range(args.iterations):
         permutation = np.random.permutation(train_data.shape[0])
         permuted_x_train, permuted_y_train = (
@@ -68,28 +81,37 @@ if __name__ == "__main__":
             train_target[permutation],
         )
         batch_count = int(train_data.shape[0] / args.batch_size)
-
         for batch_x, batch_y in zip(
             np.split(permuted_x_train, batch_count),
             np.split(permuted_y_train, batch_count),
         ):
-            probs,A = forward(batch_x)
-            
-            dZ2 = probs - batch_y
-            dW2 = 1/m*np.dot(dZ2,A.T)
-            dZ1 = np.dot(weights[1],dZ2)*(1-np.power(A,2))
-            dW1 = 1/m*np.dot(dZ1,batch_x.T)
-            
-            weights[1] -= args.learning_rate*dW2
-            weights[0] -= args.learning_rate*dW1
+            probs, A, Z = forward(batch_x)
+            batch_y = np.eye(args.classes)[batch_y]
 
-        train_probs,_ = forward(train_data)
-        train_pred = np.argmax(train_probs)
-        test_probs,_ = forward(test_data)
-        train_pred = np.argmax(test_probs)
-        
-        print("After iteration {}: train acc {:.1f}%, test acc {:.1f}%".format(
-            iteration + 1,
-            100 * sklearn.metrics.accuracy_score()# Training accuracy,
-            100 * # Test accuracy,
-        ))
+            dZ2 = probs - batch_y
+            dW2 = 1 / args.batch_size * A.T @ dZ2
+            dZ1 = dZ2 @ weights[1].T * (Z >= 0).astype(np.int8)
+            dW1 = 1 / args.batch_size * batch_x.T @ dZ1
+
+            weights[1] -= args.learning_rate * dW2
+            weights[0] -= args.learning_rate * dW1
+
+        train_probs, _, _ = forward(train_data)
+        test_probs, _, _ = forward(test_data)
+
+        predictions_train = np.argmax(train_probs, axis=1)
+        predictions_test = np.argmax(test_probs, axis=1)
+        print(
+            "After iteration {}: train acc {:.1f}%, test acc {:.1f}%".format(
+                iteration + 1,
+                100
+                * sklearn.metrics.accuracy_score(
+                    train_target, predictions_train
+                ),  # Training accuracy,
+                100
+                * sklearn.metrics.accuracy_score(
+                    test_target, predictions_test
+                ),  # Test accuracy,
+            )
+        )
+
