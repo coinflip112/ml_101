@@ -4,9 +4,11 @@ import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.special import softmax
 import sklearn.datasets
 import sklearn.metrics
 import sklearn.model_selection
+from sklearn.metrics import log_loss
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -37,6 +39,8 @@ if __name__ == "__main__":
     weights = [np.random.uniform(size=[train_data.shape[1], args.hidden_layer], low=-0.1, high=0.1),
                np.random.uniform(size=[args.hidden_layer, args.classes], low=-0.1, high=0.1)]
 
+    relu = lambda x: np.maximum(x,0)
+
     def forward(inputs):
         # TODO: Implement forward propagation, returning *both* the value of the hidden
         # layer and the value of the output layer.
@@ -52,30 +56,40 @@ if __name__ == "__main__":
         # in softmax can easily overflow. To avoid it, you can use the fact that
         # softmax(z) = softmax(z + any_constant) and compute softmax(z) = softmax(z - maximum_of_z).
         # That way we only exponentiate values which are non-positive, and overflow does not occur.
-
+        Z = np.dot(weights[0],inputs)
+        A = relu(Z)
+        output = np.dot(weights[1], A)
+        return softmax(output,axis = 0), A
+    
     for iteration in range(args.iterations):
         permutation = np.random.permutation(train_data.shape[0])
+        permuted_x_train, permuted_y_train = (
+            train_data[permutation],
+            train_target[permutation],
+        )
+        batch_count = int(train_data.shape[0] / args.batch_size)
 
-        # TODO: Process the data in the order of `permutation`.
-        # For every `args.batch_size`, average their gradient, and update the weights.
-        # You can assume that `args.batch_size` exactly divides `train_data.shape[0]`.
-        #
-        # The gradient used in SGD has now two parts, gradient of weghts[0] and weights[1].
-        #
-        # You can either compute the gradient directly from the neural network formula,
-        # i.e., as a gradient of -log P(target | data), or you can compute
-        # it "step by step" using chain rule of derivatives, in the following order:
-        # - compute the derivative of the loss with respect to *inputs* of the
-        #   softmax on the last layer (we did this already in softmax_classification_sgd)
-        # - compute the derivative with respect to weights[1]
-        # - compute the derivative with respect to the hidden layer output
-        # - compute the derivative with respect to the hidden layer input
-        # - compute the derivative with respect to weights[0]
+        for batch_x, batch_y in zip(
+            np.split(permuted_x_train, batch_count),
+            np.split(permuted_y_train, batch_count),
+        ):
+            probs,A = forward(batch_x)
+            
+            dZ2 = probs - batch_y
+            dW2 = 1/m*np.dot(dZ2,A.T)
+            dZ1 = np.dot(weights[1],dZ2)*(1-np.power(A,2))
+            dW1 = 1/m*np.dot(dZ1,batch_x.T)
+            
+            weights[1] -= args.learning_rate*dW2
+            weights[0] -= args.learning_rate*dW1
 
-        # TODO: After the SGD iteration, measure the accuracy for both the
-        # train test and the test set and print it in percentages.
+        train_probs,_ = forward(train_data)
+        train_pred = np.argmax(train_probs)
+        test_probs,_ = forward(test_data)
+        train_pred = np.argmax(test_probs)
+        
         print("After iteration {}: train acc {:.1f}%, test acc {:.1f}%".format(
             iteration + 1,
-            100 * # Training accuracy,
+            100 * sklearn.metrics.accuracy_score()# Training accuracy,
             100 * # Test accuracy,
         ))
