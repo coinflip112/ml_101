@@ -137,7 +137,8 @@ def recodex_predict(data):
         return zip(*[s[i:] for i in range(n)])
 
     input_len = 13
-    features = np.concatenate([
+    features = np.concatenate(
+        [
             np.array(
                 list(
                     find_ngrams(
@@ -149,42 +150,83 @@ def recodex_predict(data):
                 )
             )
             for sentence in data.split("\n")[:-1]
-        ])
+        ]
+    )
 
-    def convert_predictions(predictions,orig_text):
+    def convert_predictions(predictions, orig_text):
+        to_diacritize = [
+            "a",
+            "c",
+            "d",
+            "e",
+            "i",
+            "n",
+            "o",
+            "r",
+            "s",
+            "t",
+            "u",
+            "y",
+            "z",
+            "A",
+            "C",
+            "D",
+            "E",
+            "I",
+            "N",
+            "O",
+            "R",
+            "S",
+            "T",
+            "U",
+            "Y",
+            "Z",
+        ]
         predictions = "".join(
-                np.where(
-                    ((np.array(list(predictions)) == " ")
-                    & (np.array(list(orig_text)) != " ")),
-                    np.array(list(orig_text)),
-                    np.array(list(predictions)),
-                )
+            np.where(
+                (
+                    (np.array(list(predictions)) == " ")
+                    & (np.array(list(orig_text)) != " ")
+                ),
+                np.array(list(orig_text)),
+                np.array(list(predictions)),
             )
+        )
         predictions = "".join(
-                np.where(
-                    ((np.array(list(predictions)) != " ")
-                    & (np.array(list(orig_text)) == " ")),
-                    np.array(list(orig_text)),
-                    np.array(list(predictions)),
-                )
+            np.where(
+                (
+                    (np.array(list(predictions)) != " ")
+                    & (np.array(list(orig_text)) == " ")
+                ),
+                np.array(list(orig_text)),
+                np.array(list(predictions)),
             )
+        )
+        predictions = "".join(
+            np.where(
+                np.isin(np.array(list(orig_text)), to_diacritize),
+                np.array(list(predictions)),
+                np.array(list(orig_text)),
+            )
+        )
         result = [
-            predicted_char.upper() if orig_char.isupper() else predicted_char for predicted_char,orig_char in zip(predictions,orig_text)
+            predicted_char.upper() if orig_char.isupper() else predicted_char
+            for predicted_char, orig_char in zip(predictions, orig_text)
         ]
         return "".join(result)
 
-    def add_newlines(predictions,data):
+    def add_newlines(predictions, data):
         new_predictions = ""
         data_index = 0
         pred_index = 0
         while pred_index < len(predictions):
             if data[data_index] == "\n":
                 new_predictions += "\n"
-                data_index +=1 
+                data_index += 1
             new_predictions += predictions[pred_index]
-            pred_index +=1 
-            data_index +=1
-        return new_predictions + '\n'
+            pred_index += 1
+            data_index += 1
+        return new_predictions + "\n"
 
     orig_text = "".join(data.split("\n"))
 
@@ -193,8 +235,8 @@ def recodex_predict(data):
     predictions = le.inverse_transform(predictions)
     predictions = "".join(predictions)
 
-    predictions = convert_predictions(predictions,orig_text)
+    predictions = convert_predictions(predictions, orig_text)
 
-    result = add_newlines(predictions,data)
-    
+    result = add_newlines(predictions, data)
+
     return result
