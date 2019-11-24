@@ -17,10 +17,6 @@ from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 flatten = lambda l: [item for sublist in l for item in sublist]
 
 
-def find_ngrams(s, n):
-    return zip(*[s[i:] for i in range(n)])
-
-
 def remove_accents(input_str):
     nfkd_form = unicodedata.normalize("NFKD", input_str)
     return u"".join([c for c in nfkd_form if not unicodedata.combining(c)])
@@ -128,7 +124,6 @@ def recodex_predict(data):
     # The `data` is a `str` containing text without diacritics
 
     args = parser.parse_args([])
-
     with lzma.open("diacritization.model", "rb") as model_file:
         nn = pickle.load(model_file)
 
@@ -138,14 +133,11 @@ def recodex_predict(data):
     with lzma.open("label.encoder", "rb") as model_file:
         le = pickle.load(model_file)
 
-    sentences = data.split("\n")
-
     def find_ngrams(s, n):
         return zip(*[s[i:] for i in range(n)])
 
     input_len = 13
-    features = np.array(
-        [
+    features = np.concatenate([
             np.array(
                 list(
                     find_ngrams(
@@ -156,60 +148,53 @@ def recodex_predict(data):
                     )
                 )
             )
-            for sentence in sentences
-        ]
-    )
+            for sentence in data.split("\n")[:-1]
+        ])
 
-    def capitalize_word(accented_word, capitalized_word):
-        try:
-            final_capitalized_word = []
-            for accented_character, capitalized_character in zip(
-                accented_word, capitalized_word
-            ):
-                if capitalized_character.isupper():
-                    final_capitalized_word.append(accented_character.upper())
-                else:
-                    final_capitalized_word.append(accented_character)
-            return "".join(final_capitalized_word)
-        except:
-            return capitalized_word
-
-    def sentence_predict(sentence_sliding_window, sentence_orig, nn, ohe, le):
-        try:
-            ohe_sentence = ohe.transform(sentence_sliding_window)
-            predictions = nn.predict(ohe_sentence)
-            characters = le.inverse_transform(predictions)
-            sentence_predicted = "".join(
+    def convert_predictions(predictions,orig_text):
+        predictions = "".join(
                 np.where(
-                    (
-                        (np.array(list(characters)) == " ")
-                        & (np.array(list(sentence_orig)) != " ")
-                    )
-                    | (
-                        (np.array(list(characters)) != " ")
-                        & (np.array(list(sentence_orig)) == " ")
-                    ),
-                    np.array(list(sentence_orig)),
-                    np.array(list(characters)),
+                    ((np.array(list(predictions)) == " ")
+                    & (np.array(list(orig_text)) != " ")),
+                    np.array(list(orig_text)),
+                    np.array(list(predictions)),
                 )
             )
-            words_predicted = sentence_predicted.split(" ")
-            words_orig = sentence_orig.split(" ")
-            words_capitalized = [
-                capitalize_word(accented_word, orig_word)
-                for accented_word, orig_word in zip(words_predicted, words_orig)
-            ]
-            sentence_predicted = " ".join(words_capitalized)
-            if len(sentence_predicted) != len(sentence_orig):
-                return sentence_orig
-        except:
-            return sentence_orig
-        return sentence_predict
+        predictions = "".join(
+                np.where(
+                    ((np.array(list(predictions)) != " ")
+                    & (np.array(list(orig_text)) == " ")),
+                    np.array(list(orig_text)),
+                    np.array(list(predictions)),
+                )
+            )
+        result = [
+            predicted_char.upper() if orig_char.isupper() else predicted_char for predicted_char,orig_char in zip(predictions,orig_text)
+        ]
+        return "".join(result)
 
-    predicted_sentences = [
-        sentence_predict(transformed_sentence, orig_sentence, nn, ohe, le)
-        for transformed_sentence, orig_sentence in zip(features, sentences)
-    ]
+    def add_newlines(predictions,data):
+        new_predictions = ""
+        data_index = 0
+        pred_index = 0
+        while pred_index < len(predictions):
+            if data[data_index] == "\n":
+                new_predictions += "\n"
+                data_index +=1 
+            new_predictions += predictions[pred_index]
+            pred_index +=1 
+            data_index +=1
+        return new_predictions + '\n'
 
-    predictions = "\n".join(predicted_sentences)
-    return predictions
+    orig_text = "".join(data.split("\n"))
+
+    features = ohe.transform(features)
+    predictions = nn.predict(features)
+    predictions = le.inverse_transform(predictions)
+    predictions = "".join(predictions)
+
+    predictions = convert_predictions(predictions,orig_text)
+
+    result = add_newlines(predictions,data)
+    
+    return result
