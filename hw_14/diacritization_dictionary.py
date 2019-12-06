@@ -1,4 +1,25 @@
 #!/usr/bin/env python3
+import argparse
+import lzma
+import os
+import pickle
+import string
+import sys
+import unicodedata
+import urllib.request
+from collections import namedtuple
+
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
+flatten = lambda l: [item for sublist in l for item in sublist]
+
+
+def remove_accents(input_str):
+    nfkd_form = unicodedata.normalize("NFKD", input_str)
+    return u"".join([c for c in nfkd_form if not unicodedata.combining(c)])
+
+
 class Dictionary:
     def __init__(
         self,
@@ -19,32 +40,6 @@ class Dictionary:
             for line in dictionary_file:
                 nodia_word, *variants = line.rstrip("\n").split()
                 self.variants[nodia_word] = variants
-
-
-import argparse
-import lzma
-import os
-import pickle
-import string
-import sys
-import unicodedata
-import urllib.request
-
-import numpy as np
-import pandas as pd
-from sklearn.neural_network import MLPClassifier
-from sklearn.preprocessing import LabelEncoder, OneHotEncoder
-
-flatten = lambda l: [item for sublist in l for item in sublist]
-
-
-def find_ngrams(s, n):
-    return zip(*[s[i:] for i in range(n)])
-
-
-def remove_accents(input_str):
-    nfkd_form = unicodedata.normalize("NFKD", input_str)
-    return u"".join([c for c in nfkd_form if not unicodedata.combining(c)])
 
 
 class Dataset:
@@ -150,40 +145,104 @@ def recodex_predict(data):
 
     args = parser.parse_args([])
 
-    with lzma.open("diacritization.model", "rb") as model_file:
+    with lzma.open("diacritization_new.model", "rb") as model_file:
         nn = pickle.load(model_file)
 
-    with lzma.open("onehot.encoder", "rb") as model_file:
+    with lzma.open("onehot_new.encoder", "rb") as model_file:
         ohe = pickle.load(model_file)
-
-    with lzma.open("label.encoder", "rb") as model_file:
-        le = pickle.load(model_file)
 
     sentences = data.split("\n")
 
     def find_ngrams(s, n):
         return zip(*[s[i:] for i in range(n)])
 
-    input_len = 21
-    features = np.array(
+    diac_source_target_combo = namedtuple("diac_combo", ["source", "target"])
+    diacritization_mapping = {
+        diac_source_target_combo("a", "á"): "acute",
+        diac_source_target_combo("c", "č"): "caron",
+        diac_source_target_combo("d", "ď"): "caron",
+        diac_source_target_combo("e", "ě"): "caron",
+        diac_source_target_combo("e", "é"): "caron",
+        diac_source_target_combo("i", "í"): "acute",
+        diac_source_target_combo("n", "ň"): "caron",
+        diac_source_target_combo("o", "ó"): "acute",
+        diac_source_target_combo("r", "ř"): "caron",
+        diac_source_target_combo("s", "š"): "caron",
+        diac_source_target_combo("t", "ť"): "caron",
+        diac_source_target_combo("u", "ů"): "ring",
+        diac_source_target_combo("u", "ú"): "acute",
+        diac_source_target_combo("y", "ý"): "acute",
+        diac_source_target_combo("z", "ž"): "caron",
+    }
+    input_len = 13
+    variants = Dictionary().variants
+    sentences = data.split("\n")
+    sentence_features = np.array(
         [
-            np.array(
-                list(
-                    find_ngrams(
-                        "".join(["#" for i in range(int((input_len - 1) / 2))])
-                        + sentence.lower()
-                        + "".join(["#" for i in range(int((input_len - 1) / 2))]),
-                        input_len,
-                    )
+            list(
+                find_ngrams(
+                    "".join(["#" for i in range(int((input_len - 1) / 2))])
+                    + remove_accents(sentence.lower())
+                    + "".join(["#" for i in range(int((input_len - 1) / 2))]),
+                    input_len,
                 )
             )
             for sentence in sentences
         ]
     )
-    
+
+    def word_predict(word_features, orig_word):
+        if orig_word in variants:
+            word_candidates = variants[orig_word]
+            orig_word = orig_word.lower()
+        else:
+            return orig_word
+        if len(word_candidates) == 1:
+            return word_candidates[0]
+        changes = []
+        for word in word_candidates:
+            character_changes = []
+            for char in list(word):
+                char_pair = diac_source_target_combo(
+                    source=str.translate(char, Dataset.DIA_TO_NODIA), target=char
+                )
+                if char_pair in diacritization_mapping:
+                    character_changes.append(diacritization_mapping[char_pair])
+                else:
+                    character_changes.append("no_change")
+            changes.append(character_changes)
+        word_features = ohe.transform(word_features)
+        predicted_proba = [
+            dict(zip(["acute", "caron", "no_change", "ring"], predicted_prob))
+            for predicted_prob in nn.predict_proba(word_features)
+        ]
+        candidate_probas = []
+        for word_candidate_change in changes:
+            single_proba = 1
+            for char_change, proba_dict in zip(word_candidate_change, predicted_proba):
+                single_proba *= proba_dict[char_change]
+            candidate_probas.append(single_proba)
+        return word_candidates[np.argmax(candidate_probas)]
+
+    def sentence_predict(orig_sentence_features, orig_sentence):
+        space_indexes = np.where(np.array(list(orig_sentence)) == " ")
+        space_indexes = np.concatenate(
+            [[-1], space_indexes[0], [len(orig_sentence) - 1]]
+        )
+        word_features = [
+            orig_sentence_features[space_indexes[i - 1] + 1 : space_indexes[i]]
+            for space_count, i in enumerate(range(1, len(space_indexes)))
+        ]
+        orig_words = orig_sentence.split(" ")
+        predicted_words = [
+            word_predict(word_feature, orig_word)
+            for (word_feature, orig_word) in zip(word_features, orig_words)
+        ]
+        return " ".join(predicted_words)
+
     predicted_sentences = [
-        sentence_predict(transformed_sentence, orig_sentence, nn, ohe, le)
-        for transformed_sentence, orig_sentence in zip(features, sentences)
+        sentence_predict(sentence_feature, orig_sentence)
+        for sentence_feature, orig_sentence in zip(sentence_features, sentences)
     ]
 
     predictions = "\n".join(predicted_sentences)
