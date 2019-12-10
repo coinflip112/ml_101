@@ -1,3 +1,4 @@
+.vscode/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -70,8 +71,8 @@ docs/_build/
 target/
 
 # Jupyter Notebook
-.ipynb_checkpoints
-
+*.ipynb_checkpoints
+*.ipynb
 # pyenv
 .python-version
 
@@ -90,6 +91,8 @@ ENV/
 env.bak/
 venv.bak/
 
+#
+*.out
 # Spyder project settings
 .spyderproject
 .spyproject
@@ -102,3 +105,12 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+#models
+*.model
+
+#xz files
+*.xz
+
+#npz files
+*.npz
