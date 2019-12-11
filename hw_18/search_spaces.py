@@ -8,11 +8,11 @@ vectorizer_search_space = {
 }
 rf_search_space = {
     **vectorizer_search_space,
-    "estimator__max_depth": Integer(low=10, high=50),
-    "estimator__max_features": Real(low=0.3, high=1.0),
+    "estimator__max_depth": Integer(low=10, high=15),
+    "estimator__max_features": Real(low=0.1, high=0.2),
     "estimator__min_samples_leaf": Integer(low=2, high=10),
     "estimator__min_samples_split": Integer(low=2, high=5),
-    "estimator__n_estimators": Integer(low=40, high=1000),
+    "estimator__n_estimators": Integer(low=40, high=200),
     "estimator__bootstrap": Categorical([True, False]),
 }
 
@@ -38,5 +38,8 @@ knn_search_space = {
     "estimator__n_neighbors": Integer(low=3, high=20),
     "estimator__p": Integer(low=1, high=2),
 }
-naive_bayes_search_space = {**vectorizer_search_space}
+naive_bayes_search_space = {
+    **vectorizer_search_space,
+    "estimator__alpha": Real(low=0.9, high=1.1),
+}
 

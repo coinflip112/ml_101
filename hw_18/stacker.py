@@ -26,9 +26,7 @@ class StackingClassifier(BaseEstimator, ClassifierMixin):
             ]
         )
 
-        stacker = LogisticRegressionCV(
-            cv=5, scoring=get_scorer("f1_score"), max_iter=1000
-        )
+        stacker = LogisticRegressionCV(cv=5, scoring=get_scorer("f1"), max_iter=1000)
 
         stacker.fit(X=lv_1_features, y=y)
         self.stacker = stacker
@@ -66,6 +64,5 @@ class StackingClassifier(BaseEstimator, ClassifierMixin):
             tup=[estimator.predict_proba(X)[:, 1] for estimator in self.estimators]
         )
 
-        predictions = self.stacker.predict_proba(lv_1_features)[:, 1]
-        labels = predictions > self.naive_threshold
-        return labels
+        predictions = self.stacker.predict(lv_1_features)
+        return predictions

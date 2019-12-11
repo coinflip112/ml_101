@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import argparse
 import lzma
 import pickle
@@ -58,24 +57,18 @@ if __name__ == "__main__":
     #
     # To save a model, open a target file for binary access, and use
     # `pickle.dump` to save the model to the opened file:
-    with lzma.open(args.model_path, "wb") as model_file:
-        pickle.dump(model, model_file)
 
-# The `recodex_predict` is called during ReCodEx evaluation (there can be
-# several Python sources in the submission, but exactly one should contain
-# a `recodex_predict` method).
+
 def recodex_predict(data):
     # The `data` is a Python list containing tweets as `str`ings.
 
     args = parser.parse_args([])
 
-    # TODO: Predict target values for the given data.
-    #
-    # You should probably start by loading a model. Start by opening the model
-    # file for binary read access and then use `pickle.load` to deserialize the
-    # model from the stored binary data:
-    with lzma.open(args.model_path, "rb") as model_file:
+    with lzma.open("isnt_it_ironic.model", "rb") as model_file:
         model = pickle.load(model_file)
 
+    predictions = model.predict(data)
+
+    return predictions.astype(np.int8)
     # TODO: Return the predictions as a Python list or Numpy array of
     # binary labels of the tweets.
