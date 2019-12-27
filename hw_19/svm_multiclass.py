@@ -3,16 +3,11 @@ import argparse
 import sys
 
 import numpy as np
+import pandas as pd
 import sklearn.datasets
 import sklearn.metrics
 import sklearn.model_selection
-
-
-def smo(train_data, train_target, test_data, args):
-    # TODO: Use exactly the SMO algorithm from `smo_algorithm` assignment.
-    #
-    # The `j_generator` should be created every time with the same seed.
-    pass
+from itertools import combinations
 
 
 if __name__ == "__main__":
@@ -49,6 +44,121 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
+    def kernel(x, y):
+        if args.kernel == "linear":
+            return x @ y
+        if args.kernel == "poly":
+            return (args.kernel_gamma * x @ y + 1) ** args.kernel_degree
+        if args.kernel == "rbf":
+            return np.exp(-args.kernel_gamma * ((x - y) @ (x - y)))
+
+    def clip(a, H, L):
+        if a > H:
+            return H
+        if L > a:
+            return L
+        return a
+
+    def predict(a, b, train_data, train_target, x):
+        return (
+            sum(
+                a[i] * train_target[i] * kernel(train_data[i], x) for i in range(len(a))
+            )
+            + b
+        )
+
+    def smo(train_data, train_target, test_data, args):
+        a, b = np.zeros(len(train_data)), 0
+        j_generator = np.random.RandomState(args.seed)
+
+        passes = 0
+
+        while passes < args.num_passes:
+            a_changed = 0
+            for i in range(len(a)):
+                pred_i = predict(a, b, train_data, train_target, train_data[i, :])
+                Ei = pred_i - train_target[i]
+                cond_1 = (a[i] < args.C) and (train_target[i] * Ei < -args.tolerance)
+                cond_2 = (a[i] > 0) and (train_target[i] * Ei > args.tolerance)
+                if cond_1 or cond_2:
+                    j = j_generator.randint(len(a) - 1)
+                    j = j + (j >= i)
+                    pred_j = predict(a, b, train_data, train_target, train_data[j, :])
+                    Ej = pred_j - train_target[j]
+
+                    second_derivative_j = (
+                        2 * kernel(train_data[i,], train_data[j,])
+                        - kernel(train_data[i,], train_data[i,])
+                        - kernel(train_data[j,], train_data[j,])
+                    )
+
+                    a_j_new = a[j] - train_target[j] * (
+                        (Ei - Ej) / (second_derivative_j)
+                    )
+
+                    if second_derivative_j >= -args.tolerance:
+                        continue
+
+                    if train_target[i] == train_target[j]:
+                        L = np.maximum(0, a[i] + a[j] - args.C)
+                        H = np.minimum(args.C, a[i] + a[j])
+                    else:
+                        L = np.maximum(0, a[j] - a[i])
+                        H = np.minimum(args.C, args.C + a[j] - a[i])
+
+                    if (H - L) < args.tolerance:
+                        continue
+                        # nothing
+
+                    a_j_new = clip(a_j_new, H, L)
+
+                    if abs(a_j_new - a[j]) <= args.tolerance:
+                        continue
+
+                    a_i_new = a[i] - train_target[i] * train_target[j] * (
+                        a_j_new - a[j]
+                    )
+
+                    b_j = (
+                        b
+                        - Ej
+                        - train_target[i]
+                        * (a_i_new - a[i])
+                        * kernel(train_data[i,], train_data[j,])
+                        - train_target[j]
+                        * (a_j_new - a[j])
+                        * kernel(train_data[j,], train_data[j,])
+                    )
+                    b_i = (
+                        b
+                        - Ei
+                        - train_target[i]
+                        * (a_i_new - a[i])
+                        * kernel(train_data[i,], train_data[i,])
+                        - train_target[j]
+                        * (a_j_new - a[j])
+                        * kernel(train_data[j,], train_data[i,])
+                    )
+                    a[j] = a_j_new
+                    a[i] = a_i_new
+
+                    # - increase a_changed
+                    if 0 < a[i] < args.C:
+                        b = b_i.copy()
+                    elif 0 < a[j] < args.C:
+                        b = b_j.copy()
+                    else:
+                        b = (b_i + b_j) / 2
+                    a_changed = a_changed + 1
+                passes = 0 if a_changed else passes + 1
+            pred_test = np.sign(
+                [
+                    predict(a, b, train_data, train_target, test_data[o, :])
+                    for o in range(test_data.shape[0])
+                ]
+            )
+        return a, b, pred_test
+
     # Set random seed
     np.random.seed(args.seed)
 
@@ -62,10 +172,46 @@ if __name__ == "__main__":
         data, target, stratify=target, test_size=args.test_size, random_state=args.seed
     )
 
+    unique_classes = np.unique(target)
+
+    classifiers = {}
+    predictions = {}
+    for class_a, class_b in combinations(unique_classes, 2):
+        relevant_classes = pd.Series(train_target).isin((class_a, class_b))
+
+        train_data_classed = train_data[relevant_classes, :]
+
+        train_target_classed = train_target[relevant_classes]
+        train_target_classed = (train_target_classed == class_b).astype(np.int8)
+        train_target_classed = 2 * train_target_classed - 1
+
+        a_classed, b_classed, test_pred_classed = smo(
+            train_data_classed, train_target_classed, test_data, args
+        )
+
+        classifiers[(class_a, class_b)] = (a_classed, b_classed)
+
+        test_pred_classed = np.where(
+            np.array(test_pred_classed) == -1, class_a, class_b
+        )
+        predictions[(class_a, class_b)] = test_pred_classed
+
+    predictions_test_set = pd.DataFrame(predictions)
+    predictions_test_set = (
+        predictions_test_set.apply(lambda row: row.mode().iloc[0], axis=1)
+        .squeeze()
+        .values
+    )
+
     # TODO: Using One-vs-One scheme, train (K \binom 2) classifiers, one for every
     # pair of classes.
 
     # Then, classify the test set by majority voting, using the lowest class
     # index in case of ties. Finally compute `test accuracy`.
 
-    print("{:.2f}".format(100 * test_accuracy))
+    print(
+        "{:.2f}".format(
+            100 * (np.array(predictions_test_set) == np.array(test_target)).mean()
+        )
+    )
+
