@@ -12,12 +12,15 @@ import pandas as pd
 
 import sklearn.metrics
 
+
 class Dataset:
     CLASSES = ["sitting", "sittingdown", "standing", "standingup", "walking"]
 
-    def __init__(self,
-                 name="human_activity_recognition.train.csv.xz",
-                 url="https://ufal.mff.cuni.cz/~straka/courses/npfl129/1920/datasets/"):
+    def __init__(
+        self,
+        name="human_activity_recognition.train.csv.xz",
+        url="https://ufal.mff.cuni.cz/~straka/courses/npfl129/1920/datasets/",
+    ):
         if not os.path.exists(name):
             print("Downloading dataset {}...".format(name), file=sys.stderr)
             urllib.request.urlretrieve(url + name, filename=name)
@@ -26,35 +29,25 @@ class Dataset:
         # and `train_data` (all other columns).
         dataset = pd.read_csv(name)
         self.data = dataset.drop("class", axis=1)
-        self.target = np.array([Dataset.CLASSES.index(target) for target in dataset["class"]], np.int32)
+        self.target = np.array(
+            [Dataset.CLASSES.index(target) for target in dataset["class"]], np.int32
+        )
+
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--model_path", default="human_activity_recognition.model", type=str, help="Model path")
+parser.add_argument(
+    "--model_path",
+    default="human_activity_recognition.model",
+    type=str,
+    help="Model path",
+)
 parser.add_argument("--seed", default=42, type=int, help="Random seed")
 
 if __name__ == "__main__":
     args = parser.parse_args()
-
-    # Set random seed
     np.random.seed(args.seed)
 
-    # Load the dataset, downloading it if required
-    train = Dataset()
 
-    # TODO: Train the model.
-
-    # TODO: The trained model needs to be saved. All sklearn models can
-    # be serialized and deserialized using the standard `pickle` module.
-    # Additionally, we also compress the model.
-    #
-    # To save a model, open a target file for binary access, and use
-    # `pickle.dump` to save the model to the opened file:
-    with lzma.open(args.model_path, "wb") as model_file:
-        pickle.dump(model, model_file)
-
-# The `recodex_predict` is called during ReCodEx evaluation (there can be
-# several Python sources in the submission, but exactly one should contain
-# a `recodex_predict` method).
 def recodex_predict(data):
     # The `data` is a pandas.DataFrame containt test set input.
 
@@ -65,7 +58,8 @@ def recodex_predict(data):
     # You should probably start by loading a model. Start by opening the model
     # file for binary read access and then use `pickle.load` to deserialize the
     # model from the stored binary data:
-    with lzma.open(args.model_path, "rb") as model_file:
+    with lzma.open("human_activity_model.model", "rb") as model_file:
         model = pickle.load(model_file)
-
+    predictions = model.predict(data)
+    return predictions
     # TODO: Return the predictions as a Numpy array.
