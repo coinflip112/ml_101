@@ -114,3 +114,8 @@ venv.bak/
 
 #npz files
 *.npz
+
+*logs
+
+*.h5
+*.zip
