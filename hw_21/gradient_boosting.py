@@ -2,9 +2,11 @@
 import argparse
 
 import numpy as np
+import pandas as pd
 import sklearn.datasets
 import sklearn.metrics
 import sklearn.model_selection
+from scipy.special import softmax
 
 class DecisionTree:
     class Node:
@@ -54,10 +56,12 @@ class DecisionTree:
 
     def _can_split(self, node, depth):
         return (
-            (self._max_depth is None or depth < self._max_depth) and
-            len(node.instances) >= self._min_to_split and
-            not np.array_equiv(self._targets[node.instances], node.prediction) and
-            not np.array_equiv(self._data[node.instances], self._data[node.instances[0]])
+            (self._max_depth is None or depth < self._max_depth)
+            and len(node.instances) >= self._min_to_split
+            and not np.array_equiv(self._targets[node.instances], node.prediction)
+            and not np.array_equiv(
+                self._data[node.instances], self._data[node.instances[0]]
+            )
         )
 
     def _best_split(self, node):
@@ -67,11 +71,19 @@ class DecisionTree:
             separators = np.unique(node_features)
             for i in range(len(separators) - 1):
                 value = (separators[i] + separators[i + 1]) / 2
-                left, right = node.instances[node_features <= value], node.instances[node_features > value]
+                left, right = (
+                    node.instances[node_features <= value],
+                    node.instances[node_features > value],
+                )
                 criterion = self._criterion(left) + self._criterion(right)
                 if best_criterion is None or criterion < best_criterion:
-                    best_criterion, best_feature, best_value, best_left, best_right = \
-                        criterion, feature, value, left, right
+                    best_criterion, best_feature, best_value, best_left, best_right = (
+                        criterion,
+                        feature,
+                        value,
+                        left,
+                        right,
+                    )
 
         return best_feature, best_value, best_left, best_right
 
@@ -89,9 +101,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--l2", default=0, type=float, help="L2 regularization factor")
     parser.add_argument("--learning_rate", default=1, type=float, help="Learning rate")
-    parser.add_argument("--max_depth", default=None, type=int, help="Maximum decision tree depth")
-    parser.add_argument("--min_to_split", default=2, type=int, help="Minimum examples required to split")
-    parser.add_argument("--n_estimators", default=1, type=int, help="Number of trees in the forest")
+    parser.add_argument(
+        "--max_depth", default=None, type=int, help="Maximum decision tree depth"
+    )
+    parser.add_argument(
+        "--min_to_split", default=2, type=int, help="Minimum examples required to split"
+    )
+    parser.add_argument(
+        "--n_estimators", default=1, type=int, help="Number of trees in the forest"
+    )
     parser.add_argument("--seed", default=42, type=int, help="Random seed")
     parser.add_argument("--test_size", default=42, type=int, help="Test set size")
     args = parser.parse_args()
@@ -105,10 +123,27 @@ if __name__ == "__main__":
     # Split the data randomly to train and test using `sklearn.model_selection.train_test_split`,
     # with `test_size=args.test_size` and `random_state=args.seed`.
     train_data, test_data, train_target, test_target = sklearn.model_selection.train_test_split(
-        data, target, stratify=target, test_size=args.test_size, random_state=args.seed)
+        data, target, stratify=target, test_size=args.test_size, random_state=args.seed
+    )
 
     classes = np.max(target) + 1
 
+    forest = []
+
+    def predict(forest, data):
+        predictions = np.sum(
+            np.array([tree.predict_proba(data) for tree in forest]), axis=0
+        )
+        return softmax(predictions)
+
+    for i in range(args.n_estimators):
+        if i == 0:
+            tree = DecisionTree(args.max_depth, args.min_to_split)
+            tree.fit(train_data, train_target)
+            forest.append(tree)
+        else:
+            predictions = predict(forest,train_data)
+            
     # TODO: Create a gradient boosted trees on the classification training data.
     #
     # Notably, train for `args.n_estimators` iteration. During iteration `t`:
@@ -131,6 +166,18 @@ if __name__ == "__main__":
     #
     # To perform a prediction, analogically compute the y_raw for all trees, and return
     # the class with the highest value (and the smallest class if there is a tie).
+    predictions_train = {key: tree.predict(train_data) for key, tree in forest.items()}
+    predictions_test = {key: tree.predict(test_data) for key, tree in forest.items()}
+
+    predictions_train = pd.DataFrame(predictions_train)
+    predictions_test = pd.DataFrame(predictions_test)
+
+    predictions_train = (
+        predictions_train.apply(lambda row: row.mode().iloc[0], axis=1).squeeze().values
+    )
+    predictions_test = (
+        predictions_test.apply(lambda row: row.mode().iloc[0], axis=1).squeeze().values
+    )
 
     # TODO: Finally, measure the training and testing accuracy.
     print("Train acc: {:.1f}%".format(100 * train_accuracy))
